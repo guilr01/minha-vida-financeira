@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6F7">
+<title>Minha Vida Financeira</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+
+  <aside class="lateral">
+    <div class="marca-grande">Minha Vida Financeira</div>
+    <div class="marca-sub">Painel de comando pessoal</div>
+    <nav id="nav-lateral" aria-label="Seções"></nav>
+    <button class="btn btn-primario" data-abrir="rapido">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Adicionar
+    </button>
+    <div class="pe">Dados guardados neste dispositivo.</div>
+  </aside>
+
+  <main class="main">
+    <header class="topo" id="topo">
+      <div class="topo-interno">
+        <div>
+          <div class="marca">Minha vida financeira</div>
+          <h1 class="titulo-tela" id="titulo-tela">Visão geral</h1>
+        </div>
+        <div class="mes-nav">
+          <button type="button" id="mes-anterior" aria-label="Mês anterior">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button type="button" class="mes-rotulo num" id="mes-rotulo" aria-label="Escolher mês"></button>
+          <button type="button" id="mes-proximo" aria-label="Próximo mês">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="conteudo" id="tela" tabindex="-1"></div>
+  </main>
+</div>
+
+<nav class="tabbar" id="tabbar" aria-label="Navegação principal"></nav>
+
+<div id="raiz-modal"></div>
+<div id="raiz-toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
