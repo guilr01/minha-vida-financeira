@@ -219,6 +219,9 @@ input,select,textarea{ font: inherit; color: inherit; }
 .fluxo-linha .fl-valor{ flex:0 0 auto; text-align:right; }
 .fluxo-linha .fl-valor .v{ display:block; font-size:14.5px; font-weight:600; }
 .fluxo-linha .fl-valor .p{ display:block; font-size:11.5px; color: var(--tinta-3); }
+/* a linha do simulador tem explicacao embaixo do nome, nao so do valor */
+.fluxo-linha .fl-nome .p{ display:block; font-size:11.5px; color: var(--tinta-3); margin-top:5px; }
+.fluxo-linha .fl-nome .barra{ margin-top:7px; }
 
 /* ---------- metricas ---------- */
 

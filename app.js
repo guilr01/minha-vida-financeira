@@ -123,6 +123,7 @@ const estadoVazio = () => ({
   patrimonio: [],
   faturasPagas: {},   // "cartaoId|2026-09": true
   importados: {},     // chave do lancamento de extrato ja aproveitado
+  simulador: {},      // premissas da projecao, escolhidas pela pessoa
 });
 
 const Store = {
@@ -148,6 +149,7 @@ const Store = {
     COLECOES.forEach(c => { if (!Array.isArray(out[c])) out[c] = []; });
     if (!out.faturasPagas || typeof out.faturasPagas !== 'object') out.faturasPagas = {};
     if (!out.importados || typeof out.importados !== 'object') out.importados = {};
+    if (!out.simulador || typeof out.simulador !== 'object') out.simulador = {};
     [...out.entradas, ...out.despesas, ...out.investimentos].forEach(i => {
       if (!i.ajustes || typeof i.ajustes !== 'object') i.ajustes = {};
       if (!i.id) i.id = uid();
@@ -1167,6 +1169,7 @@ Object.assign(Telas, {
       <div class="largo">${cartaoDist}</div>
       ${cartaoMetas}
       ${cartaoPatr}
+      <div class="largo">${cartaoSimulador()}</div>
       <div class="largo">${cartaoFluxo}</div>
       <div class="largo">${cartaoDados}</div>
     </div>`;
@@ -1992,6 +1995,12 @@ const ACOES = {
     alvo.dispatchEvent(new Event('input', { bubbles: true }));
   },
 
+  cenario: b => {
+    Store.mudar(d => { d.simulador = Object.assign({}, d.simulador, { cenario: b.dataset.valor }); });
+  },
+  premissas: () => { fecharFolha(true); folhaPremissas(); },
+  'ano-a-ano': () => { fecharFolha(true); folhaAnoAano(); },
+
   exportar: () => exportar(),
   importar: () => importar(),
   'copiar-json': async b => {
@@ -2505,5 +2514,236 @@ function folhaRevisarExtrato() {
         toast(`${r.criados} criado(s) · ${r.conciliados} conciliado(s)`);
       });
     },
+  });
+}
+
+/* ===================== 14. SIMULADOR DE PATRIMONIO =====================
+   Aritmetica sobre premissa que a PESSOA escolheu. Nao e previsao, nao e
+   recomendacao, e o aplicativo nao sugere taxa de lugar nenhum: os valores
+   que vem preenchidos sao ponto de partida redondo, ditos como tais na tela.
+   Quem decide quanto rende e quem vai assumir o risco.
+   ===================================================================== */
+
+const HORIZONTES = [12, 24, 36, 60, 120];
+const CENARIOS = [
+  { k: 'pessimista', r: 'Pessimista' },
+  { k: 'moderado', r: 'Moderado' },
+  { k: 'otimista', r: 'Otimista' },
+];
+
+const Projecao = {
+  /** Taxa anual em taxa mensal equivalente (juros compostos, nao divisao por 12). */
+  mensal(anual) { return Math.pow(1 + Number(anual || 0) / 100, 1 / 12) - 1; },
+
+  /** Valor futuro de um saldo inicial mais aportes mensais no fim de cada mes. */
+  em(meses, p) {
+    const i = this.mensal(p.taxa);
+    const n = Math.max(0, Math.round(meses));
+    const inicial = Number(p.inicial || 0), aporte = Number(p.aporte || 0);
+    const f = Math.pow(1 + i, n);
+    const bruto = Math.abs(i) < 1e-12 ? inicial + aporte * n : inicial * f + aporte * (f - 1) / i;
+    const aportado = inicial + aporte * n;
+    const rendimento = bruto - aportado;
+    // imposto so incide sobre ganho, e so se houver ganho
+    const imposto = Math.max(0, rendimento) * (Number(p.imposto || 0) / 100);
+    const liquido = bruto - imposto;
+    const real = liquido / Math.pow(1 + Number(p.inflacao || 0) / 100, n / 12);
+    return { meses: n, bruto, aportado, rendimento, imposto, liquido, real };
+  },
+
+  /** Um ponto por ano, com o ganho daquele ano isolado. */
+  anoAano(p, anos) {
+    const linhas = [];
+    let anterior = this.em(0, p);
+    for (let a = 1; a <= anos; a++) {
+      const atual = this.em(a * 12, p);
+      linhas.push({
+        ano: a,
+        ...atual,
+        ganhoNoAno: atual.bruto - anterior.bruto - Number(p.aporte || 0) * 12,
+        aportadoNoAno: Number(p.aporte || 0) * 12,
+      });
+      anterior = atual;
+    }
+    return linhas;
+  },
+
+  /** O ano em que o rendimento passa a superar o que voce deposita. */
+  virada(p, limite = 40) {
+    if (!Number(p.aporte)) return null;
+    const linhas = this.anoAano(p, limite);
+    const achado = linhas.find(l => l.ganhoNoAno > l.aportadoNoAno);
+    return achado ? achado.ano : null;
+  },
+};
+
+/** Premissas vigentes: o que a pessoa salvou, caindo nos dados dela quando vazio. */
+function premissas() {
+  const s = Store.dados.simulador || {};
+  const patr = Calc.patrimonioTotal();
+  const t = Calc.totais(Store.mes);
+  return {
+    inicial: s.inicial != null ? Number(s.inicial) : patr,
+    aporte: s.aporte != null ? Number(s.aporte) : Math.max(0, t.investimentos_total + Math.max(0, t.saldo)),
+    taxas: Object.assign({ pessimista: 4, moderado: 8, otimista: 12 }, s.taxas),
+    inflacao: s.inflacao != null ? Number(s.inflacao) : 4,
+    imposto: s.imposto != null ? Number(s.imposto) : 15,
+    cenario: s.cenario || 'moderado',
+    daPessoa: s.inicial != null || s.aporte != null,
+  };
+}
+
+const paraProjecao = (pr, cenario) => ({
+  inicial: pr.inicial, aporte: pr.aporte,
+  taxa: pr.taxas[cenario], inflacao: pr.inflacao, imposto: pr.imposto,
+});
+
+function cartaoSimulador() {
+  const pr = premissas();
+  const cen = pr.cenario;
+  const p = paraProjecao(pr, cen);
+  const virada = Projecao.virada(p);
+
+  // a taxa nao cabe dentro do botao a 375px: ela vai na linha de baixo, do cenario escolhido
+  const segmentado = `<div class="segmentado">${CENARIOS.map(c =>
+    `<button type="button" data-acao="cenario" data-valor="${c.k}" aria-pressed="${cen === c.k}">${c.r}</button>`).join('')}</div>
+    <p class="dica" style="margin:-4px 0 10px">Rendendo <b>${String(pr.taxas[cen]).replace('.', ',')}% ao ano</b>, premissa sua.</p>`;
+
+  const linhas = HORIZONTES.map(m => {
+    const r = Projecao.em(m, p);
+    const anos = m / 12;
+    return `<div class="fluxo-linha">
+      <span class="fl-nome">
+        <span class="n">${anos === 1 ? '1 ano' : anos + ' anos'}</span>
+        <div class="barra fina" title="parte que veio de rendimento"><i style="width:${Math.min(100, Math.max(0, pct(Math.max(0, r.rendimento), r.bruto, 1)))}%;background:var(--positivo)"></i></div>
+        <span class="p">você depositou ${brlCurto(r.aportado)} · rendeu ${brlCurto(r.rendimento)}</span>
+      </span>
+      <span class="fl-valor">
+        <span class="v num">${brlCurto(r.liquido)}</span>
+        <span class="p num">${brlCurto(r.real)} em dinheiro de hoje</span>
+      </span>
+    </div>`;
+  }).join('');
+
+  return cartao(`
+    <div class="aviso frio" style="margin-bottom:12px">
+      ${ic('escudo', 16)}
+      <span>As taxas abaixo são <b>premissas suas</b>, não previsão e não recomendação. Nenhum investimento garante retorno.</span>
+    </div>
+    <div class="grade-metricas" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <div class="metrica">
+        <div class="rotulo">Começando com</div>
+        <div class="v num">${brlCurto(pr.inicial)}</div>
+        <div class="ajuda">${pr.daPessoa ? 'definido por você' : 'seu patrimônio cadastrado'}</div>
+      </div>
+      <div class="metrica">
+        <div class="rotulo">Aporte mensal</div>
+        <div class="v num">${brlCurto(pr.aporte)}</div>
+        <div class="ajuda">${pr.daPessoa ? 'definido por você' : 'sua sobra do mês'}</div>
+      </div>
+    </div>
+    ${segmentado}
+    ${linhas}
+    ${virada ? `<div class="aviso frio" style="margin-top:12px">${ic('grafico', 16)}
+        <span>No <b>ano ${virada}</b> o rendimento passa a ser maior que tudo o que você deposita no ano.</span></div>`
+      : `<div class="dica" style="margin-top:12px">Com estas premissas o rendimento não ultrapassa o aporte dentro de 40 anos.</div>`}
+    <div class="linha-botoes" style="margin-top:12px">
+      <button class="btn btn-pequeno" data-acao="premissas">Ajustar premissas</button>
+      <button class="btn btn-pequeno btn-fantasma" data-acao="ano-a-ano">Ver ano a ano</button>
+    </div>
+    <p class="dica" style="margin-top:10px">
+      Imposto de ${String(pr.imposto).replace('.', ',')}% sobre o rendimento e inflação de ${String(pr.inflacao).replace('.', ',')}% ao ano,
+      as duas também premissas suas. "Em dinheiro de hoje" é o valor depois de descontar a inflação.
+    </p>`,
+    { titulo: 'Simulador de patrimônio' });
+}
+
+function folhaPremissas() {
+  const pr = premissas();
+  const num = v => String(v).replace('.', ',');
+  abrirFolha({
+    titulo: 'Premissas da simulação',
+    corpo: `<form class="form" id="form-premissas">
+      ${F.dinheiro({ nome: 'inicial', rotulo: 'Começando com', valor: pr.inicial, dica: 'Deixe em branco para usar o patrimônio que você cadastrou.' })}
+      ${F.dinheiro({ nome: 'aporte', rotulo: 'Aporte mensal', valor: pr.aporte, dica: 'Deixe em branco para usar a sobra do mês.' })}
+      <div class="campo">
+        <label>Quanto você assume que rende, ao ano</label>
+        <span class="dica">Três cenários para o mesmo dinheiro. Estes números são seus: o aplicativo não sugere taxa, não conhece o mercado de hoje e não sabe o que o seu investimento vai render.</span>
+      </div>
+      ${F.dupla(
+        F.texto({ nome: 'pessimista', rotulo: 'Pessimista (% a.a.)', valor: num(pr.taxas.pessimista), attrs: 'inputmode="decimal"' }),
+        F.texto({ nome: 'moderado', rotulo: 'Moderado (% a.a.)', valor: num(pr.taxas.moderado), attrs: 'inputmode="decimal"' })
+      )}
+      ${F.dupla(
+        F.texto({ nome: 'otimista', rotulo: 'Otimista (% a.a.)', valor: num(pr.taxas.otimista), attrs: 'inputmode="decimal"' }),
+        F.texto({ nome: 'inflacao', rotulo: 'Inflação (% a.a.)', valor: num(pr.inflacao), attrs: 'inputmode="decimal"' })
+      )}
+      ${F.texto({ nome: 'imposto', rotulo: 'Imposto sobre o rendimento (%)', valor: num(pr.imposto), attrs: 'inputmode="decimal"', dica: 'Cobrado no resgate, sobre o ganho. A alíquota muda conforme o produto e o prazo: confira a do seu.' })}
+    </form>`,
+    pe: `<button type="button" class="btn" data-acao="premissas-padrao">Voltar ao padrão</button>
+         <button type="submit" form="form-premissas" class="btn btn-primario">Salvar</button>`,
+    aoMontar: tela => {
+      tela.querySelector('#form-premissas').addEventListener('submit', ev => {
+        ev.preventDefault();
+        const d = Object.fromEntries(new FormData(ev.target).entries());
+        const vazio = v => String(v || '').trim() === '';
+        Store.mudar(s => {
+          s.simulador = {
+            inicial: vazio(d.inicial) ? null : paraNumero(d.inicial),
+            aporte: vazio(d.aporte) ? null : paraNumero(d.aporte),
+            taxas: {
+              pessimista: paraNumero(d.pessimista),
+              moderado: paraNumero(d.moderado),
+              otimista: paraNumero(d.otimista),
+            },
+            inflacao: paraNumero(d.inflacao),
+            imposto: paraNumero(d.imposto),
+            cenario: pr.cenario,
+          };
+        });
+        toast('Premissas salvas');
+        fecharFolha();
+      });
+      tela.querySelector('[data-acao="premissas-padrao"]').addEventListener('click', () => {
+        Store.mudar(s => { s.simulador = {}; });
+        toast('Premissas voltaram ao padrão');
+        fecharFolha();
+      });
+    },
+  });
+}
+
+function folhaAnoAano() {
+  const pr = premissas();
+  const p = paraProjecao(pr, pr.cenario);
+  const linhas = Projecao.anoAano(p, 10);
+  const nome = (CENARIOS.find(c => c.k === pr.cenario) || CENARIOS[1]).r;
+
+  abrirFolha({
+    titulo: `Ano a ano · ${nome}`,
+    corpo: `
+      <p class="dica">Rendendo ${String(pr.taxas[pr.cenario]).replace('.', ',')}% ao ano, premissa sua. A coluna da direita é o valor já descontada a inflação.</p>
+      <div style="height:12px"></div>
+      <div class="lista">
+        ${linhas.map(l => `<div class="item" style="padding:11px 0">
+          <span class="item-corpo">
+            <span class="item-nome">Ano ${l.ano}</span>
+            <span class="item-meta">
+              <span>depositou ${brlCurto(l.aportadoNoAno)}</span>
+              <span>·</span>
+              <span class="${l.ganhoNoAno >= l.aportadoNoAno ? 'pos' : ''}">rendeu ${brlCurto(l.ganhoNoAno)}</span>
+            </span>
+          </span>
+          <span class="item-lado" style="text-align:right">
+            <span>
+              <span class="item-valor num" style="display:block;cursor:default">${brlCurto(l.liquido)}</span>
+              <span class="p num cinza" style="font-size:11.5px">${brlCurto(l.real)} de hoje</span>
+            </span>
+          </span>
+        </div>`).join('')}
+      </div>
+      <div style="height:14px"></div>
+      <div class="aviso frio">${ic('escudo', 16)}
+        <span>Simulação não é promessa. Rendimento varia, pode ser negativo, e o resultado real depende do que você escolher investir.</span></div>`,
   });
 }
