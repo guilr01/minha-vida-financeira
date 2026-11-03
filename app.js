@@ -830,6 +830,7 @@ const Telas = {
         ${cartaoDist}
         ${metaPrincipal}
         ${cartaoPatr}
+        ${cartaoSimulador({ compacto: true })}
         ${cartaoFluxo}
         <div class="largo">${destaques}</div>
       </div>
@@ -2598,7 +2599,7 @@ const paraProjecao = (pr, cenario) => ({
   taxa: pr.taxas[cenario], inflacao: pr.inflacao, imposto: pr.imposto,
 });
 
-function cartaoSimulador() {
+function cartaoSimulador({ compacto = false } = {}) {
   const pr = premissas();
   const cen = pr.cenario;
   const p = paraProjecao(pr, cen);
@@ -2609,7 +2610,8 @@ function cartaoSimulador() {
     `<button type="button" data-acao="cenario" data-valor="${c.k}" aria-pressed="${cen === c.k}">${c.r}</button>`).join('')}</div>
     <p class="dica" style="margin:-4px 0 10px">Rendendo <b>${String(pr.taxas[cen]).replace('.', ',')}% ao ano</b>, premissa sua.</p>`;
 
-  const linhas = HORIZONTES.map(m => {
+  const horizontes = compacto ? [12, 60, 120] : HORIZONTES;
+  const linhas = horizontes.map(m => {
     const r = Projecao.em(m, p);
     const anos = m / 12;
     return `<div class="fluxo-linha">
@@ -2630,7 +2632,9 @@ function cartaoSimulador() {
       ${ic('escudo', 16)}
       <span>As taxas abaixo são <b>premissas suas</b>, não previsão e não recomendação. Nenhum investimento garante retorno.</span>
     </div>
-    <div class="grade-metricas" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+    ${compacto
+      ? `<p class="dica" style="margin-bottom:10px">Partindo de <b class="num">${brlCurto(pr.inicial)}</b> e guardando <b class="num">${brlCurto(pr.aporte)}</b> por mês.</p>`
+      : `<div class="grade-metricas" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
       <div class="metrica">
         <div class="rotulo">Começando com</div>
         <div class="v num">${brlCurto(pr.inicial)}</div>
@@ -2641,7 +2645,7 @@ function cartaoSimulador() {
         <div class="v num">${brlCurto(pr.aporte)}</div>
         <div class="ajuda">${pr.daPessoa ? 'definido por você' : 'sua sobra do mês'}</div>
       </div>
-    </div>
+    </div>`}
     ${segmentado}
     ${linhas}
     ${virada ? `<div class="aviso frio" style="margin-top:12px">${ic('grafico', 16)}
@@ -2649,13 +2653,17 @@ function cartaoSimulador() {
       : `<div class="dica" style="margin-top:12px">Com estas premissas o rendimento não ultrapassa o aporte dentro de 40 anos.</div>`}
     <div class="linha-botoes" style="margin-top:12px">
       <button class="btn btn-pequeno" data-acao="premissas">Ajustar premissas</button>
-      <button class="btn btn-pequeno btn-fantasma" data-acao="ano-a-ano">Ver ano a ano</button>
+      ${compacto
+        ? `<button class="btn btn-pequeno btn-fantasma" data-acao="tela" data-tela="plano">Simulador completo</button>`
+        : `<button class="btn btn-pequeno btn-fantasma" data-acao="ano-a-ano">Ver ano a ano</button>`}
     </div>
     <p class="dica" style="margin-top:10px">
-      Imposto de ${String(pr.imposto).replace('.', ',')}% sobre o rendimento e inflação de ${String(pr.inflacao).replace('.', ',')}% ao ano,
-      as duas também premissas suas. "Em dinheiro de hoje" é o valor depois de descontar a inflação.
+      ${compacto
+        ? `"Em dinheiro de hoje" é o valor depois de descontar a inflação de ${String(pr.inflacao).replace('.', ',')}% ao ano.`
+        : `Imposto de ${String(pr.imposto).replace('.', ',')}% sobre o rendimento e inflação de ${String(pr.inflacao).replace('.', ',')}% ao ano,
+      as duas também premissas suas. "Em dinheiro de hoje" é o valor depois de descontar a inflação.`}
     </p>`,
-    { titulo: 'Simulador de patrimônio' });
+    { titulo: compacto ? 'Onde isso chega' : 'Simulador de patrimônio' });
 }
 
 function folhaPremissas() {

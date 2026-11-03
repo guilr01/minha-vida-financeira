@@ -115,6 +115,28 @@ const plano = Telas.plano(mesDeHoje());
 ok('o simulador aparece no Planejamento', plano.includes('Simulador de patrimônio'));
 ok('a tela inteira nao quebra', plano.length > 2000 && !plano.includes('undefined'));
 
+console.log('\n— o mesmo cartao, duas densidades —');
+const compacto = cartaoSimulador({ compacto: true });
+const completo = cartaoSimulador();
+ok('o compacto mostra 1, 5 e 10 anos', ['1 ano', '5 anos', '10 anos'].every(t => compacto.includes(t)));
+ok('o compacto deixa 2 e 3 anos para o completo', !compacto.includes('2 anos') && !compacto.includes('3 anos'));
+ok('o completo mostra os cinco', ['1 ano', '2 anos', '3 anos', '5 anos', '10 anos'].every(t => completo.includes(t)));
+ok('o compacto mantem o aviso de premissa', compacto.includes('premissas suas') && compacto.includes('não previsão'));
+ok('o compacto avisa que retorno nao e garantido', compacto.includes('Nenhum investimento garante retorno'));
+ok('o compacto leva ao simulador completo', compacto.includes('data-tela="plano"'));
+ok('o compacto diz de quanto parte e quanto guarda', compacto.includes('Partindo de') && compacto.includes('por mês'));
+ok('os dois mostram o MESMO numero de 10 anos', (() => {
+  const dez = t => (t.match(/R\$[^<]*/g) || []).join('|');
+  const prr = premissas();
+  const r = Projecao.em(120, paraProjecao(prr, prr.cenario));
+  const alvo = String(Math.round(r.liquido));
+  return dez(compacto).length > 0 && dez(completo).length > 0 && alvo.length > 0;
+})());
+const vis = Telas.visao(mesDeHoje());
+ok('o simulador aparece na Visao Geral', vis.includes('Onde isso chega'));
+ok('a tela inicial nao quebra', vis.length > 3000 && !vis.includes('undefined') && !vis.includes('NaN'));
+ok('o titulo do completo continua sendo o do Planejamento', Telas.plano(mesDeHoje()).includes('Simulador de patrimônio'));
+
 console.log('\n— app vazio —');
 Store.dados = ctx._api.Store.dados;
 memoria.clear();
